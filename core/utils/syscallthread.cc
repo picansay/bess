@@ -1,5 +1,4 @@
-// Copyright (c) 2014-2016, The Regents of the University of California.
-// Copyright (c) 2016-2017, Nefeli Networks, Inc.
+// Copyright (c) 2017, Nefeli Networks, Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -28,54 +27,31 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef BESS_GATE_HOOKS_PCAPNG_
-#define BESS_GATE_HOOKS_PCAPNG_
+#include <cstring>
 
-#include "../message.h"
-#include "../module.h"
+#include "syscallthread.h"
 
-#include "../utils/fifo_opener.h"
+namespace bess {
+namespace utils {
 
-class PcapngOpener final : public bess::utils::FifoOpener {
- public:
-  PcapngOpener() : FifoOpener() {}
-  bool InitFifo(int fd) override;
-};
+/*!
+ * When we receive an exit signal, that will interrupt any
+ * in-progress system call if appropriate.
+ */
+void ExitRequestHandler(int) {}
 
-// Pcapng dumps copies of the packets seen by a gate (data + metadata) in
-// pcapng format.  Useful for debugging.
-class Pcapng final : public bess::GateHook {
- public:
-  Pcapng();
+bool CatchExitSignal() {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = ExitRequestHandler;
+  if (sigaction(ExitSigMask::SIG_THREAD_EXIT, &sa, NULL) < 0) {
+    return false;
+  }
+  ExitSigMask::signals_initialized_ = true;
+  return true;
+}
 
-  virtual ~Pcapng(){};
+bool ExitSigMask::signals_initialized_ = false;
 
-  CommandResponse Init(const bess::Gate *, const bess::pb::PcapngArg &);
-
-  void ProcessBatch(const bess::PacketBatch *batch);
-
-  static constexpr uint16_t kPriority = 2;
-  static const std::string kName;
-
- private:
-  struct Attr {
-    // Attribute offset in the packet metadata.
-    int md_offset;
-    // Size in bytes of the attribute.
-    size_t size;
-    // Offset where this attribute hex dump should go inside `attr_template_`.
-    size_t tmpl_offset;
-  };
-
-  // The opener instance for the FIFO for the captured packets.
-  PcapngOpener opener_;
-
-  // List of attributes to dump.
-  std::vector<Attr> attrs_;
-  // Preallocated string with attribute names and values.  For each packet,
-  // we will change in place the values and send the string out, without
-  // doing any memory allocation.
-  std::vector<char> attr_template_;
-};
-
-#endif  // BESS_GATE_HOOKS_PCAPNG_
+}  // namespace bess
+}  // namespace utils
